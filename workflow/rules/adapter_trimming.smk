@@ -101,7 +101,7 @@ rule fastqc:
     threads: 1
     resources:
         mem_mb=1000,
-        runtime=60,
+        runtime=lambda wildcards, attempt: 60 * attempt,
         nodes=1,
     conda:
         "../envs/fastqc.yaml"
