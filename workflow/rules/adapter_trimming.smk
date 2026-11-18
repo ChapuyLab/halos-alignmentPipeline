@@ -45,8 +45,8 @@ rule prepare_fastq:
         sra_id=sra_id or "",
         ngc=ngc_file or "",
     output:
-        fastq_r1=temp(scratch_path / "fastq" / "{run_id}" / "{sample}_R1_{lane}.fastq.gz"),
-        fastq_r2=temp(scratch_path / "fastq" / "{run_id}" / "{sample}_R2_{lane}.fastq.gz"),
+        fastq_r1=temp(scratch_path / "fastq" / "raw" / "{run_id}" / "{sample}_R1_{lane}.fastq.gz"),
+        fastq_r2=temp(scratch_path / "fastq" / "raw" / "{run_id}" / "{sample}_R2_{lane}.fastq.gz"),
     log:
         logdir / "prepare_fastq/{run_id}_{sample}_{lane}.log",
     threads: 8

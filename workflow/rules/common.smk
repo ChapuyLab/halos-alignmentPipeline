@@ -338,10 +338,12 @@ def getFastq(wildcards, metadata, base_dir, trim_adapters):
         fastq_r1 = [
             base_dir
             / "fastq"
+            / "raw"
             / wildcards.run_id
             / (wildcards.sample + "_R1_" + wildcards.lane + ".fastq.gz"),
             base_dir
             / "fastq"
+            / "raw"
             / wildcards.run_id
             / (wildcards.sample + "_R2_" + wildcards.lane + ".fastq.gz"),
         ]
