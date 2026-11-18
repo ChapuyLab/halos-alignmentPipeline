@@ -43,6 +43,7 @@ rule prepare_fastq:
         bam=bamfile or "",
         samtools_params=extra_samtools_convert_params,
         sra_id=sra_id or "",
+        sra_workdir=lambda wc: str(wrkdir / "fastq" / "sra_tmp" / wc.sample),
         ngc=ngc_file or "",
     output:
         fastq_r1=temp(scratch_path / "fastq" / "raw" / "{run_id}" / "{sample}_R1_{lane}.fastq.gz"),
