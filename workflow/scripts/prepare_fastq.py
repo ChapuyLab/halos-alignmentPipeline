@@ -4,6 +4,7 @@
 import argparse
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,39 +41,44 @@ def run_bam_to_fastq(bam: str, r1: Path, r2: Path, threads: int, samtools_params
 
 
 def run_sra_to_fastq(sra_id: str, r1: Path, r2: Path, threads: int, sra_workdir: Path, ngc: str) -> None:
-    """Download an SRA accession and convert it to paired-end gzipped FASTQs inside sra_workdir."""
+    """Download an SRA accession and convert it to paired-end gzipped FASTQs inside a deterministic sra_workdir."""
     if not sra_id:
         raise ValueError("--sra is required when --mode is 'sra'")
 
     ngc_args = ["--ngc", ngc] if ngc else []
-    sra_workdir.mkdir(parents=True, exist_ok=True)
+    sra_tmp_path = sra_workdir / sra_id
+    sra_tmp_path.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix=f"sra_{sra_id}_", dir=str(sra_workdir)) as sra_tmp:
-        sra_tmp_path = Path(sra_tmp)
-        prefetch_cmd = ["prefetch", *ngc_args, "--progress", sra_id, "--max-size", "u", "-O", str(sra_tmp_path)]
-        subprocess.run(prefetch_cmd, check=True)
+    # Remove stale .lock files left behind by cancelled/killed prefetch runs
+    for lock_file in sra_tmp_path.rglob("*.lock"):
+        lock_file.unlink(missing_ok=True)
 
-        fasterq_cmd = [
-            "fasterq-dump", *ngc_args,
-            "--progress",
-            "--split-files",
-            "--threads", str(threads),
-            "-t", str(sra_tmp_path),
-            "-O", str(sra_tmp_path),
-            str(sra_tmp_path / sra_id),
-        ]
-        subprocess.run(fasterq_cmd, check=True)
+    prefetch_cmd = ["prefetch", *ngc_args, "--progress", sra_id, "--max-size", "u", "-O", str(sra_tmp_path)]
+    subprocess.run(prefetch_cmd, check=True)
 
-        fq1 = sra_tmp_path / f"{sra_id}_1.fastq"
-        fq2 = sra_tmp_path / f"{sra_id}_2.fastq"
-        if not fq1.is_file() or not fq2.is_file():
-            raise FileNotFoundError(
-                f"Expected paired-end FASTQs ({fq1.name} and {fq2.name}) were not generated for {sra_id}."
-            )
+    fasterq_cmd = [
+        "fasterq-dump", *ngc_args,
+        "--progress",
+        "--split-files",
+        "--threads", str(threads),
+        "-t", str(sra_tmp_path),
+        "-O", str(sra_tmp_path),
+        str(sra_tmp_path / sra_id),
+    ]
+    subprocess.run(fasterq_cmd, check=True)
 
-        for src, dst in [(fq1, r1), (fq2, r2)]:
-            with open(dst, "wb") as out_f:
-                subprocess.run(["pigz", "-p", str(threads), "-c", str(src)], stdout=out_f, check=True)
+    fq1 = sra_tmp_path / f"{sra_id}_1.fastq"
+    fq2 = sra_tmp_path / f"{sra_id}_2.fastq"
+    if not fq1.is_file() or not fq2.is_file():
+        raise FileNotFoundError(
+            f"Expected paired-end FASTQs ({fq1.name} and {fq2.name}) were not generated for {sra_id}."
+        )
+
+    for src, dst in [(fq1, r1), (fq2, r2)]:
+        with open(dst, "wb") as out_f:
+            subprocess.run(["pigz", "-p", str(threads), "-c", str(src)], stdout=out_f, check=True)
+
+    shutil.rmtree(sra_tmp_path, ignore_errors=True)
 
 
 def main() -> None:
