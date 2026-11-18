@@ -22,6 +22,40 @@ if INPUT_MODE not in ["fastq", "bam", "sra"]:
 # Load template config
 TEMPLATE_CONFIG = yaml.safe_load((PIPELINE_DIR / "config" / "config.yaml").read_text())
 
+def _parse_adapter_list(val):
+    if isinstance(val, list):
+        return val
+    return [x.strip() for x in str(val).replace(";", ",").split(",") if x.strip()]
+
+
+def _extract_from_df(sample_rows, sample_name, cols, config_key, default_val, as_list=False):
+    for col in cols:
+        if col in sample_rows.columns:
+            vals = [str(v).strip() for v in sample_rows[col].dropna().tolist() if str(v).strip() != ""]
+            unique_vals = list(dict.fromkeys(vals))
+            if len(unique_vals) > 1:
+                raise ValueError(f"Sample {sample_name} has conflicting values for '{col}': {unique_vals}")
+            if len(unique_vals) == 1:
+                return _parse_adapter_list(unique_vals[0]) if as_list else unique_vals[0]
+    cfg_val = config.get(config_key)
+    if cfg_val is not None and cfg_val != "" and cfg_val != []:
+        return _parse_adapter_list(cfg_val) if as_list else cfg_val
+    print(f"[INFO] {sample_name}: '{config_key}' not provided in metadata or config; defaulting to {repr(default_val)}")
+    return default_val
+
+
+def _extract_from_entry(entry, sample_name, keys, config_key, default_val, as_list=False):
+    for k in keys:
+        val = entry.get(k)
+        if val is not None and str(val).strip() != "" and val != []:
+            return _parse_adapter_list(val) if as_list else val
+    cfg_val = config.get(config_key)
+    if cfg_val is not None and cfg_val != "" and cfg_val != []:
+        return _parse_adapter_list(cfg_val) if as_list else cfg_val
+    print(f"[INFO] {sample_name}: '{config_key}' not provided in sample sheet or config; defaulting to {repr(default_val)}")
+    return default_val
+
+
 # Parse cohort sample entries
 SAMPLE_MAP = {}
 if INPUT_MODE == "fastq":
@@ -31,13 +65,14 @@ if INPUT_MODE == "fastq":
     for sample_name in df["SAMPLE_NAME"].unique():
         pid_part, sample_part = sample_name.split("_", 1)
         sample_rows = df[df["SAMPLE_NAME"] == sample_name]
-        lib_kits = sample_rows["LIBRARY_PREP_KIT"].dropna().unique()
-        if len(lib_kits) > 1:
-            raise ValueError(f"Sample {sample_name} has multiple library prep kits: {lib_kits}")
         SAMPLE_MAP[sample_name] = {
             "pid": pid_part,
             "sample": sample_part,
-            "library_prep_kit": lib_kits[0] if len(lib_kits) == 1 else "Unknown",
+            "library_prep_kit": _extract_from_df(sample_rows, sample_name, ["LIBRARY_PREP_KIT", "library_prep_kit"], "library_prep_kit", "Unknown"),
+            "adapter_forward_read": _extract_from_df(sample_rows, sample_name, ["ADAPTER_FORWARD_READ", "adapter_forward_read"], "adapter_forward_read", None, as_list=True),
+            "adapter_reverse_read": _extract_from_df(sample_rows, sample_name, ["ADAPTER_REVERSE_READ", "adapter_reverse_read"], "adapter_reverse_read", None, as_list=True),
+            "extra_cutadapt_params": _extract_from_df(sample_rows, sample_name, ["EXTRA_CUTADAPT_PARAMS", "extra_cutadapt_params"], "extra_cutadapt_params", ""),
+            "extra_samtools_convert_params": _extract_from_df(sample_rows, sample_name, ["EXTRA_SAMTOOLS_CONVERT_PARAMS", "extra_samtools_convert_params"], "extra_samtools_convert_params", ""),
             "metadata": meta_path,
         }
 else:
@@ -56,7 +91,11 @@ else:
         SAMPLE_MAP[sample_name] = {
             "pid": pid_part,
             "sample": sample_part,
-            "library_prep_kit": entry.get("library_prep_kit") or "Unknown",
+            "library_prep_kit": _extract_from_entry(entry, sample_name, ["library_prep_kit", "LIBRARY_PREP_KIT"], "library_prep_kit", "Unknown"),
+            "adapter_forward_read": _extract_from_entry(entry, sample_name, ["adapter_forward_read", "ADAPTER_FORWARD_READ"], "adapter_forward_read", None, as_list=True),
+            "adapter_reverse_read": _extract_from_entry(entry, sample_name, ["adapter_reverse_read", "ADAPTER_REVERSE_READ"], "adapter_reverse_read", None, as_list=True),
+            "extra_cutadapt_params": _extract_from_entry(entry, sample_name, ["extra_cutadapt_params", "EXTRA_CUTADAPT_PARAMS"], "extra_cutadapt_params", ""),
+            "extra_samtools_convert_params": _extract_from_entry(entry, sample_name, ["extra_samtools_convert_params", "EXTRA_SAMTOOLS_CONVERT_PARAMS"], "extra_samtools_convert_params", ""),
             "bamfile": entry.get("bamfile", ""),
             "sra": entry.get("sra", ""),
             "ngc": entry.get("ngc", ""),
@@ -126,8 +165,8 @@ rule generate_sample_config:
             yaml_dict["metadata"] = entry["metadata"]
         elif INPUT_MODE == "bam":
             yaml_dict["bamfile"] = entry["bamfile"]
-            if config.get("extra_samtools_convert_params"):
-                yaml_dict["extra_samtools_convert_params"] = config["extra_samtools_convert_params"]
+            if entry.get("extra_samtools_convert_params"):
+                yaml_dict["extra_samtools_convert_params"] = entry["extra_samtools_convert_params"]
         elif INPUT_MODE == "sra":
             yaml_dict["sra"] = entry["sra"]
             if entry.get("ngc"):
@@ -136,10 +175,12 @@ rule generate_sample_config:
         trim = bool(config.get("trim_adapters", False))
         yaml_dict["trim_adapters"] = trim
         if trim:
-            yaml_dict["adapter_forward_read"] = config["adapter_forward_read"]
-            yaml_dict["adapter_reverse_read"] = config["adapter_reverse_read"]
-            if config.get("extra_cutadapt_params"):
-                yaml_dict["extra_cutadapt_params"] = config["extra_cutadapt_params"]
+            if not entry.get("adapter_forward_read") or not entry.get("adapter_reverse_read"):
+                raise ValueError(f"Sample {sample_name}: trim_adapters is True, but adapter_forward_read/adapter_reverse_read not provided.")
+            yaml_dict["adapter_forward_read"] = entry["adapter_forward_read"]
+            yaml_dict["adapter_reverse_read"] = entry["adapter_reverse_read"]
+            if entry.get("extra_cutadapt_params"):
+                yaml_dict["extra_cutadapt_params"] = entry["extra_cutadapt_params"]
         else:
             yaml_dict.pop("adapter_forward_read", None)
             yaml_dict.pop("adapter_reverse_read", None)

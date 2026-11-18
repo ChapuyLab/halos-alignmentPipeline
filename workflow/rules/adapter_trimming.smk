@@ -38,10 +38,10 @@ rule prepare_fastq:
     input:
         bam=bamfile if input_mode == "bam" else [],
     params:
-        script=lambda wc: str(Path(workflow.basedir) / "scripts" / "prepare_fastq.sh"),
+        script=lambda wc: str(Path(workflow.basedir) / "scripts" / "prepare_fastq.py"),
         mode=input_mode,
         bam=bamfile or "",
-        samtools_params=config.get("extra_samtools_convert_params", ""),
+        samtools_params=extra_samtools_convert_params,
         sra_id=sra_id or "",
         ngc=ngc_file or "",
     output:
@@ -61,15 +61,15 @@ rule prepare_fastq:
         "Preparing paired-end FASTQ files from input source"
     shell:
         """
-        bash {params.script} \
+        python {params.script} \
             --mode {params.mode} \
             --r1 {output.fastq_r1} \
             --r2 {output.fastq_r2} \
             --threads {threads} \
-            --tmpdir {resources.tmpdir} \
             --bam "{params.bam}" \
             --samtools-params "{params.samtools_params}" \
             --sra "{params.sra_id}" \
+            --sra-workdir "{params.sra_workdir}" \
             --ngc "{params.ngc}" &> {log}
         """
 

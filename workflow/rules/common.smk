@@ -119,16 +119,50 @@ else:
             bait_regions = config["bait_regions"]
 
 
+def _parse_adapter_list(val):
+    if isinstance(val, list):
+        return val
+    return [x.strip() for x in str(val).replace(";", ",").split(",") if x.strip()]
+
+
+def resolve_sample_param(config_key, meta_cols, default_val, as_list=False, required=False):
+    if metadata is not None:
+        for col in meta_cols:
+            if col in metadata.columns:
+                vals = [
+                    str(v).strip()
+                    for v in metadata[col].dropna().tolist()
+                    if str(v).strip() != ""
+                ]
+                unique_vals = list(dict.fromkeys(vals))
+                if len(unique_vals) > 1:
+                    raise ValueError(
+                        f"Multiple conflicting values for '{col}' in metadata for sample: {unique_vals}"
+                    )
+                if len(unique_vals) == 1:
+                    return _parse_adapter_list(unique_vals[0]) if as_list else unique_vals[0]
+
+    cfg_val = config.get(config_key)
+    if cfg_val is not None and cfg_val != "" and cfg_val != []:
+        return _parse_adapter_list(cfg_val) if as_list else cfg_val
+
+    if required:
+        raise ValueError(f"'{config_key}' not provided in metadata or config")
+
+    print(
+        get_data_time(),
+        f"'{config_key}' not provided in metadata or config; defaulting to {repr(default_val)}",
+    )
+    return default_val
+
+
 ##########################################################
 ################ Setting Library kit #####################
 ##########################################################
 
-if "library_prep_kit" in config:
-    library_prep_kit = config["library_prep_kit"]
-    if library_prep_kit == "":
-        library_prep_kit = "Unknown"
-else:
-    library_prep_kit = "Unknown"
+library_prep_kit = resolve_sample_param(
+    "library_prep_kit", ["LIBRARY_PREP_KIT", "library_prep_kit"], "Unknown"
+)
 
 
 ##########################################################
@@ -185,15 +219,20 @@ if "trim_adapters" not in config or (not config["trim_adapters"]):
     adapter_seq_r1 = None
     adapter_seq_r2 = None
 else:
-    if config["trim_adapters"]:
-        if "adapter_forward_read" not in config:
-            raise ValueError("Adapter sequence for R1 not provided")
-        else:
-            adapter_seq_r1 = config["adapter_forward_read"]
-        if "adapter_reverse_read" not in config:
-            raise ValueError("Adapter sequence for R2 not provided")
-        else:
-            adapter_seq_r2 = config["adapter_reverse_read"]
+    adapter_seq_r1 = resolve_sample_param(
+        "adapter_forward_read",
+        ["ADAPTER_FORWARD_READ", "adapter_forward_read"],
+        None,
+        as_list=True,
+        required=True,
+    )
+    adapter_seq_r2 = resolve_sample_param(
+        "adapter_reverse_read",
+        ["ADAPTER_REVERSE_READ", "adapter_reverse_read"],
+        None,
+        as_list=True,
+        required=True,
+    )
 
 
 if "max_coverage" not in config:
@@ -261,10 +300,14 @@ filtered_product_2 = filter_combinator(product, allow_list_2)
 # extra params
 # ==============================================================================
 
-if "extra_cutadapt_params" in config:
-    extra_cutadapt_params = config["extra_cutadapt_params"]
-else:
-    extra_cutadapt_params = ""
+extra_cutadapt_params = resolve_sample_param(
+    "extra_cutadapt_params", ["EXTRA_CUTADAPT_PARAMS", "extra_cutadapt_params"], ""
+)
+extra_samtools_convert_params = resolve_sample_param(
+    "extra_samtools_convert_params",
+    ["EXTRA_SAMTOOLS_CONVERT_PARAMS", "extra_samtools_convert_params"],
+    "",
+)
 
 
 def getFastq(wildcards, metadata, base_dir, trim_adapters):

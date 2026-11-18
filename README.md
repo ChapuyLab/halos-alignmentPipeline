@@ -20,17 +20,17 @@ Clone the repository:
 
 ```bash
 git clone https://github.com/ChapuyLab/halos-alignmentPipeline.git
-cd AlignmentPipeline
+cd halos-alignmentPipeline
 ```
 
 Create and activate the base Snakemake environment:
 
 ```bash
 mamba env create -f workflow/envs/halos-base.yaml
-mamba activate halos-basee
+mamba activate halos-base
 ```
 
-Per-rule conda environments are defined in `workflow/envs/` and managed automatically by Snakemake when run with `--use-conda`..
+Per-rule conda environments are defined in `workflow/envs/` and managed automatically by Snakemake when run with `--use-conda`.
 
 ---
 
@@ -52,9 +52,9 @@ Provide **exactly one** of `metadata`, `bamfile`, or `sra` (or `sra_id`) in `con
 
    *Note: If the metadata sheet contains multiple samples/PIDs, only the `(pid, sample)` pair specified in the active config file is processed.*
 
-2. **BAM (`bamfile`)**: Path to an aligned or unaligned BAM file. `workflow/scripts/prepare_fastq.sh` fixes `MT5:` headers if present, collates pairs, and extracts paired-end FASTQs via `samtools fastq`.
+2. **BAM (`bamfile`)**: Path to an aligned or unaligned BAM file. `workflow/scripts/prepare_fastq.py` fixes `MT5:` headers if present, collates pairs, and extracts paired-end FASTQs via `samtools fastq`.
 
-3. **SRA (`sra` or `sra_id`)**: NCBI SRA run accession (e.g., `SRR12345678`). `workflow/scripts/prepare_fastq.sh` downloads the run with `prefetch`, converts it to paired-end FASTQs with `fasterq-dump --split-files`, and compresses with `pigz`.
+3. **SRA (`sra` or `sra_id`)**: NCBI SRA run accession (e.g., `SRR12345678`). `workflow/scripts/prepare_fastq.py` downloads the run with `prefetch`, converts it to paired-end FASTQs with `fasterq-dump --split-files`, and compresses with `pigz`.
    - **Controlled-access SRA (`ngc` or `ngc_file`, optional)**: Path to a dbGaP/SRA `.ngc` key file passed via `--ngc` to `prefetch` and `fasterq-dump`.
 
 ---
