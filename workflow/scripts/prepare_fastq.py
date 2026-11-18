@@ -49,11 +49,12 @@ def run_sra_to_fastq(sra_id: str, r1: Path, r2: Path, threads: int, sra_workdir:
 
     with tempfile.TemporaryDirectory(prefix=f"sra_{sra_id}_", dir=str(sra_workdir)) as sra_tmp:
         sra_tmp_path = Path(sra_tmp)
-        prefetch_cmd = ["prefetch", *ngc_args, sra_id, "--max-size", "u", "-O", str(sra_tmp_path)]
+        prefetch_cmd = ["prefetch", *ngc_args, "--progress", sra_id, "--max-size", "u", "-O", str(sra_tmp_path)]
         subprocess.run(prefetch_cmd, check=True)
 
         fasterq_cmd = [
             "fasterq-dump", *ngc_args,
+            "--progress",
             "--split-files",
             "--threads", str(threads),
             "-t", str(sra_tmp_path),
