@@ -52,7 +52,7 @@ rule prepare_fastq:
         logdir / "prepare_fastq/{run_id}_{sample}_{lane}.log",
     threads: 8
     resources:
-        mem_mb=100000,
+        mem_mb=16000,
         runtime=72 * 60,
         nodes=1,
         tmpdir=scratch_dir,
