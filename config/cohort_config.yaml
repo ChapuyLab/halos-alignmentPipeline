@@ -1,0 +1,53 @@
+# Cohort configuration for cohort_Snakefile
+# Run with:
+#   snakemake -s cohort_Snakefile --configfile config/cohort_config.yaml --cores 16
+
+pipeline_dir: /path/to/alignment_pipeline # Path to the alignment_pipeline repository
+base_output_path: /path/to/output_dir     # Outputs go to {base_output_path}/view-by-pid/{pid}/{sample}/merged-alignment
+# scratch_dir: /path/to/scratch_dir       # Optional scratch directory for intermediate FASTQs/BAMs
+
+SeqType: "WES"                            # "WGS", "WES", or "Panel"
+genome: /path/to/reference_genome.fa      # BWA-indexed reference genome FASTA
+dbsnp: /path/to/dbsnp.vcf.gz              # bgzipped + tabix-indexed dbSNP VCF
+target_regions: /path/to/target.bed       # Required for WES/Panel
+# bait_regions: /path/to/bait.bed         # Optional for WES/Panel
+chrom_sizes: /path/to/chrom_sizes.tsv     # Required for WES/Panel
+dict_genome: /path/to/genome.dict         # Required for WES/Panel
+
+# Input mode: "fastq", "bam", or "sra"
+input_mode: "fastq"
+
+# For input_mode == "fastq":
+metadata: /path/to/metadata.csv
+
+# For input_mode == "bam" or "sra" (can also be a path to a TSV/CSV with columns: pid, sample, library_prep_kit, bamfile/sra, ngc):
+# samples:
+#   - pid: PID01
+#     sample: TUMOR
+#     library_prep_kit: SureSelect_V7
+#     bamfile: /path/to/sample.bam
+#   - pid: PID02
+#     sample: TUMOR
+#     library_prep_kit: SureSelect_V8
+#     sra: SRR12345678
+#     ngc: /path/to/key.ngc
+
+# Adapter trimming
+trim_adapters: True
+adapter_forward_read:
+  - "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA"
+adapter_reverse_read:
+  - "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT"
+# extra_cutadapt_params: "-u 5"           # e.g., "-u 5" for Agilent SureSelect V8 UMI tags
+# extra_samtools_convert_params: ""
+
+# Execution settings (supports local, SLURM, SGE, LSF, PBS, or any Snakemake profile/executor)
+per_sample_cores: 8                       # Cores per sample when running locally
+# per_sample_jobs: 10                     # Max concurrent jobs per sample when using cluster_profile or executor
+# cluster_profile: /path/to/profile       # Any Snakemake profile (SLURM, SGE, LSF, PBS, etc.)
+# executor: ""                            # Optional Snakemake executor plugin (e.g., "slurm", "sge", "lsf")
+# extra_snakemake_args: ""                # Optional extra CLI args (e.g., '--cluster "qsub -pe smp {threads}" -j 10' for SGE, or '--cluster "bsub -n {threads}" -j 10' for LSF)
+# conda_prefix: /path/to/conda_envs
+# use_singularity: False
+# singularity_prefix: /path/to/singularity_cache
+# singularity_args: "-B /data:/data"

@@ -1,0 +1,193 @@
+import os
+import yaml
+import pandas as pd
+from pathlib import Path
+
+# ==============================================================================
+# Cohort-level Snakemake wrapper for AlignmentPipeline
+# Generates per-sample configs and subcalls workflow/Snakefile for each sample.
+#
+# Usage:
+#   snakemake -s cohort_Snakefile --configfile config/cohort_config.yaml --cores 16
+# ==============================================================================
+
+PIPELINE_DIR = Path(config.get("pipeline_dir", workflow.basedir)).resolve()
+BASE_OUTPUT_PATH = Path(config["base_output_path"]).resolve()
+WORKDIR_BASE = BASE_OUTPUT_PATH / "view-by-pid"
+INPUT_MODE = config["input_mode"]  # "fastq", "bam", or "sra"
+
+if INPUT_MODE not in ["fastq", "bam", "sra"]:
+    raise ValueError(f"Invalid input_mode '{INPUT_MODE}'. Expected 'fastq', 'bam', or 'sra'.")
+
+# Load template config
+TEMPLATE_CONFIG = yaml.safe_load((PIPELINE_DIR / "config" / "config.yaml").read_text())
+
+# Parse cohort sample entries
+SAMPLE_MAP = {}
+if INPUT_MODE == "fastq":
+    meta_path = config["metadata"]
+    sep = "\t" if meta_path.split(".")[-1] in ["tsv", "txt"] else ","
+    df = pd.read_csv(meta_path, dtype=str, sep=sep)
+    for sample_name in df["SAMPLE_NAME"].unique():
+        pid_part, sample_part = sample_name.split("_", 1)
+        sample_rows = df[df["SAMPLE_NAME"] == sample_name]
+        lib_kits = sample_rows["LIBRARY_PREP_KIT"].dropna().unique()
+        if len(lib_kits) > 1:
+            raise ValueError(f"Sample {sample_name} has multiple library prep kits: {lib_kits}")
+        SAMPLE_MAP[sample_name] = {
+            "pid": pid_part,
+            "sample": sample_part,
+            "library_prep_kit": lib_kits[0] if len(lib_kits) == 1 else "Unknown",
+            "metadata": meta_path,
+        }
+else:
+    samples_cfg = config.get("samples", [])
+    if isinstance(samples_cfg, str):
+        sep = "\t" if samples_cfg.split(".")[-1] in ["tsv", "txt"] else ","
+        df = pd.read_csv(samples_cfg, dtype=str, sep=sep).fillna("")
+        samples_list = df.to_dict(orient="records")
+    else:
+        samples_list = samples_cfg
+
+    for entry in samples_list:
+        pid_part = str(entry["pid"])
+        sample_part = str(entry["sample"])
+        sample_name = f"{pid_part}_{sample_part}"
+        SAMPLE_MAP[sample_name] = {
+            "pid": pid_part,
+            "sample": sample_part,
+            "library_prep_kit": entry.get("library_prep_kit") or "Unknown",
+            "bamfile": entry.get("bamfile", ""),
+            "sra": entry.get("sra", ""),
+            "ngc": entry.get("ngc", ""),
+        }
+
+ALL_SAMPLES = list(SAMPLE_MAP.keys())
+
+
+def get_sample_workdir(sample_name):
+    entry = SAMPLE_MAP[sample_name]
+    return WORKDIR_BASE / entry["pid"] / entry["sample"] / "merged-alignment"
+
+
+rule all:
+    input:
+        [
+            get_sample_workdir(s) / "alignments" / f"{s}_dedup.recall.cram"
+            for s in ALL_SAMPLES
+        ],
+
+
+rule generate_sample_config:
+    output:
+        config_yaml=WORKDIR_BASE / "{pid}" / "{sample}" / "merged-alignment" / "{pid}_{sample}.yaml",
+    run:
+        sample_name = f"{wildcards.pid}_{wildcards.sample}"
+        entry = SAMPLE_MAP[sample_name]
+        sample_workdir = get_sample_workdir(sample_name)
+        os.makedirs(sample_workdir, exist_ok=True)
+
+        yaml_dict = dict(TEMPLATE_CONFIG)
+        for key in [
+            "metadata",
+            "bamfile",
+            "sra",
+            "sra_id",
+            "ngc",
+            "ngc_file",
+            "scratch_dir",
+            "extra_cutadapt_params",
+            "extra_samtools_convert_params",
+        ]:
+            yaml_dict.pop(key, None)
+
+        yaml_dict["work_dir"] = str(sample_workdir)
+        yaml_dict["log_dir"] = str(sample_workdir / "logs")
+        if config.get("scratch_dir"):
+            yaml_dict["scratch_dir"] = str(Path(config["scratch_dir"]) / sample_name)
+
+        yaml_dict["pid"] = entry["pid"]
+        yaml_dict["sample"] = entry["sample"]
+        yaml_dict["library_prep_kit"] = entry["library_prep_kit"]
+        yaml_dict["SeqType"] = config["SeqType"]
+        yaml_dict["genome"] = config["genome"]
+        yaml_dict["dbsnp"] = config["dbsnp"]
+
+        if config["SeqType"] in ["WES", "Panel"]:
+            yaml_dict["target_regions"] = config["target_regions"]
+            if config.get("bait_regions"):
+                yaml_dict["bait_regions"] = config["bait_regions"]
+            else:
+                yaml_dict.pop("bait_regions", None)
+            yaml_dict["chrom_sizes"] = config["chrom_sizes"]
+            yaml_dict["dict_genome"] = config["dict_genome"]
+
+        if INPUT_MODE == "fastq":
+            yaml_dict["metadata"] = entry["metadata"]
+        elif INPUT_MODE == "bam":
+            yaml_dict["bamfile"] = entry["bamfile"]
+            if config.get("extra_samtools_convert_params"):
+                yaml_dict["extra_samtools_convert_params"] = config["extra_samtools_convert_params"]
+        elif INPUT_MODE == "sra":
+            yaml_dict["sra"] = entry["sra"]
+            if entry.get("ngc"):
+                yaml_dict["ngc"] = entry["ngc"]
+
+        trim = bool(config.get("trim_adapters", False))
+        yaml_dict["trim_adapters"] = trim
+        if trim:
+            yaml_dict["adapter_forward_read"] = config["adapter_forward_read"]
+            yaml_dict["adapter_reverse_read"] = config["adapter_reverse_read"]
+            if config.get("extra_cutadapt_params"):
+                yaml_dict["extra_cutadapt_params"] = config["extra_cutadapt_params"]
+        else:
+            yaml_dict.pop("adapter_forward_read", None)
+            yaml_dict.pop("adapter_reverse_read", None)
+
+        if "max_coverage" in config:
+            yaml_dict["max_coverage"] = config["max_coverage"]
+
+        with open(output.config_yaml, "w") as f:
+            yaml.safe_dump(yaml_dict, f, sort_keys=False)
+
+
+rule run_sample_pipeline:
+    input:
+        config_yaml=WORKDIR_BASE / "{pid}" / "{sample}" / "merged-alignment" / "{pid}_{sample}.yaml",
+    output:
+        cram=WORKDIR_BASE / "{pid}" / "{sample}" / "merged-alignment" / "alignments" / "{pid}_{sample}_dedup.recall.cram",
+    params:
+        workdir=lambda wc: str(WORKDIR_BASE / wc.pid / wc.sample / "merged-alignment"),
+        snakefile=str(PIPELINE_DIR / "workflow" / "Snakefile"),
+        exec_flags=lambda wc, threads: (
+            f"--profile {config['cluster_profile']} -j {config.get('per_sample_jobs', 10)}"
+            if config.get("cluster_profile")
+            else (
+                f"--executor {config['executor']} --workflow-profile {PIPELINE_DIR / 'profile'} -j {config.get('per_sample_jobs', 10)}"
+                if config.get("executor")
+                else f"--cores {threads} --workflow-profile {PIPELINE_DIR / 'profile'}"
+            )
+        ),
+        conda_prefix_flag=f"--conda-prefix {config['conda_prefix']}" if config.get("conda_prefix") else "",
+        singularity_flags=(
+            f"--use-singularity "
+            + (f"--singularity-prefix {config['singularity_prefix']} " if config.get("singularity_prefix") else "")
+            + (f"--singularity-args \"{config['singularity_args']}\" " if config.get("singularity_args") else "")
+        )
+        if config.get("use_singularity", False)
+        else "",
+        extra_args=config.get("extra_snakemake_args", ""),
+    threads: config.get("per_sample_cores", 8)
+    log:
+        WORKDIR_BASE / "{pid}" / "{sample}" / "merged-alignment" / "logs" / "cohort_subcall.log",
+    shell:
+        """
+        (cd {params.workdir} && \
+        snakemake \
+            {params.exec_flags} \
+            --use-conda --conda-frontend mamba {params.conda_prefix_flag} \
+            {params.singularity_flags} \
+            {params.extra_args} \
+            --configfile {input.config_yaml} \
+            --snakefile {params.snakefile}) &> {log}
+        """
