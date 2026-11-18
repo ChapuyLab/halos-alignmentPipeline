@@ -1,9 +1,16 @@
+# ==============================================================================
+# Rule for duplicate marking using Sambamba
+#
+# Marks duplicate alignments in the lane-merged BAM file to improve BQSR
+# and downstream variant calling accuracy.
+# ==============================================================================
+
 rule duplicates:
     input:
-        bam=wrkdir / "alignments" / "{sample}.merged.sorted.bam",
-        bai=wrkdir / "alignments" / "{sample}.merged.sorted.bam.bai",
+        bam=scratch_path / "alignments" / "{sample}.merged.sorted.bam",
+        bai=scratch_path / "alignments" / "{sample}.merged.sorted.bam.bai",
     output:
-        bam=temp(wrkdir / "alignments" / "{sample}_dedup.bam"),
+        bam=temp(scratch_path / "alignments" / "{sample}_dedup.bam"),
     conda:
         "../envs/sambamba.yaml"
     threads: 8

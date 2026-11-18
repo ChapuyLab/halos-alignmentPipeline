@@ -1,46 +1,37 @@
-SeqType: "<WGS/WES/Panel>"
+SeqType: "<WGS/WES/Panel>" # Sequencing type: "WGS", "WES", or "Panel"
 
-library_prep_kit: "<libraryprepkit>" # needed for read group assignment defaults to Unknown
+library_prep_kit: "<library_prep_kit>" # Library preparation kit name for read-group metadata (defaults to "Unknown" if empty/omitted)
 
-pid: <Paitient ID> # Patient ID as mentioned in the metadata file
+pid: "<PATIENT_ID>" # Patient ID string (used as output prefix: {pid}_{sample})
+sample: "<SAMPLE_TYPE>" # Sample name string (matches SAMPLE_TYPE in metadata if using FASTQ metadata mode)
 
-sample: <Sample Name> # Sample name as mentioned in the metadata file
+# Provide ONE of 'metadata', 'bamfile', OR 'sra' (do not set more than one):
+metadata: /path/to/metadata.csv # CSV/TSV metadata sheet with columns: PATIENT_ID, SAMPLE_TYPE, SAMPLE_NAME, RUN_ID, LANE_NO, READ, FASTQ_FILE
+# bamfile: /path/to/input.bam # Path to input BAM file (aligned or unaligned, paired-end)
+# sra: <SRR_ACCESSION> # NCBI SRA run accession (e.g., SRR12345678)
+# ngc: /path/to/repository_key.ngc # Optional: dbGaP/SRA .ngc key file for controlled-access SRA accessions
 
-metadata: /Path/to/metadata.csv # Must be absolute path to the metadata file.
+work_dir: /path/to/work_dir # Absolute path to output directory for final CRAMs and QC metrics
+log_dir: /path/to/work_dir/logs # Absolute path to log directory (defaults to {work_dir}/logs if omitted)
+# scratch_dir: /path/to/scratch_dir # Optional: directory for intermediate FASTQ/BAM files and temp space (defaults to work_dir)
 
-work_dir: /Path/to/work_dir # Must be absolute path to the work directory
+genome: /path/to/reference_genome.fa # Absolute path to BWA-indexed reference genome FASTA (.amb, .ann, .bwt, .pac, .sa in same directory)
+dbsnp: /path/to/dbsnp.vcf.gz # Absolute path to bgzipped + tabix-indexed dbSNP VCF for GATK BaseRecalibrator
 
-log_dir: /Path/to/log_dir # Must be absolute path to the log directory, if not provided defaults to work_dir/logs
+target_regions: /path/to/target_regions.bed # Target capture regions BED file (required if SeqType is "WES" or "Panel")
+bait_regions: /path/to/bait_regions.bed # Bait capture regions BED file (optional for "WES"/"Panel"; computed from target_regions if omitted)
 
-genome: /Path/to/genome.fa # Fasta file to the reference genome
+chrom_sizes: /path/to/chrom_sizes.tsv # Tab-separated chromosome names and lengths matching the reference genome (required for "WES"/"Panel")
+dict_genome: /path/to/reference_genome.dict # Picard/GATK sequence dictionary (.dict) for the reference genome (required for "WES"/"Panel")
 
-dbsnp: /Path/to/dbsnp_all_vcf.gz # required for Base Quality score recalibration
+trim_adapters: False # True to trim adapters with cutadapt and run FastQC, False to skip trimming
+# adapter_forward_read: [
+#     "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA",
+#   ] # List of R1 adapter sequences (required if trim_adapters is True)
+# adapter_reverse_read: [
+#     "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT",
+#   ] # List of R2 adapter sequences (required if trim_adapters is True)
+# extra_cutadapt_params: "" # Optional extra CLI flags passed to cutadapt
+# extra_samtools_convert_params: "" # Optional extra CLI flags passed to samtools fastq (BAM mode only)
 
-trim_adapters: <True/False> # True if adapter trimming is required, False if not required
-
-Adapter_R1: [
-    "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA",
-    "AGATCGGAAGAGCACACGTCTGAAC",
-    "TGGAATTCTCGGGTGCCAAGG",
-    "AGATCGGAAGAGCACACGTCT",
-    "CTGTCTCTTATACACATCT",
-    "AGATGTGTATAAGAGACAG",
-  ] # list of adatapter sequences for R1 reads can be empty list or ignored if trim_adapters is False
-
-Adapter_R3: [
-    "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT",
-    "AGATCGGAAGAGCGTCGTGTAGGGA",
-    "TGGAATTCTCGGGTGCCAAGG",
-    "AGATCGGAAGAGCACACGTCT",
-    "CTGTCTCTTATACACATCT",
-    "AGATGTGTATAAGAGACAG",
-  ] # list of adatapter sequences for R1 reads can be empty list or ignored if trim_adapters is False
-
-target_regions: /Path/to/target_regions.bed # Bed file containing the target regions for the analysis only required if SeqType is Panel/WES
-
-bait_regions: /Path/to/bait_regions.bed # Bed file containing the bait regions for the analysis only required if SeqType is Panel/WES, if not provided a bait file will be generated from the target file
-
-chrom_sizes: /Path/to/chrom_sizes.tsv # Tab separated file containing the chromosome names and their lengths should match the reference genome
-dict_genome: /Path/to/genome.dict # Dictionary file for the reference genome
-
-max_coverage: 10000
+max_coverage: 10000 # Maximum coverage cap for QC reporting (defaults to 10000)

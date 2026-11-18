@@ -1,3 +1,10 @@
+# ==============================================================================
+# Rule for plotting genome-wide coverage for WGS data
+#
+# Uses a custom R script to calculate and plot depth of coverage across
+# chromosomes at a specified bin size.
+# ==============================================================================
+
 rule coveragePlot:
     input:
         bam=wrkdir / "alignments" / "{sample}_dedup.recall.cram",

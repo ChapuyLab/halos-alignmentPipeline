@@ -1,4 +1,9 @@
-# check if Mosdepth is run with in Exome/Panel or WGS mode
+# ==============================================================================
+# Rules for depth & coverage metric calculation using Mosdepth
+#
+# Runs mosdepth either in WGS mode (no target regions) or Panel/WES mode
+# (using the target BED file to restrict calculation to targeted intervals).
+# ==============================================================================
 
 if seq_type in ["Panel", "WES"]:
 

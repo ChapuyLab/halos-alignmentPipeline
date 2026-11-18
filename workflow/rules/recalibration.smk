@@ -1,6 +1,13 @@
+# ==============================================================================
+# Rules for Base Quality Score Recalibration (BQSR) using GATK4
+#
+# Performs base quality recalibration based on known sites (dbsnp) and outputs
+# recalibration metrics and a coordinate-sorted BQSR CRAM file.
+# ==============================================================================
+
 rule baseRecalibrator:
     input:
-        bam=wrkdir / "alignments" / "{sample}_dedup.bam",
+        bam=scratch_path / "alignments" / "{sample}_dedup.bam",
         dbsnp=dbsnp,
         genome=genome,
     output:

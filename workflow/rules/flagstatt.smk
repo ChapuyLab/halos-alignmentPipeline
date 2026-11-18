@@ -1,3 +1,10 @@
+# ==============================================================================
+# Rule for samtools flagstat alignment stats reporting
+#
+# Generates flagstat report summarizing alignment metrics (e.g. mapping rate,
+# pairing details) for the given alignment file.
+# ==============================================================================
+
 rule flagstatt:
     input:
         bam=wrkdir / "alignments" / "{sample}_{ext}.cram",

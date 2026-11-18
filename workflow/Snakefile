@@ -1,3 +1,11 @@
+# ==============================================================================
+# Non-UMI Sequencing Alignment Snakemake Pipeline
+# Author: Shashwat Sahay (shashwat.sahay@charite.de)
+#
+# This pipeline coordinates the sequence alignment, duplicate marking, BQSR
+# recalibration, and QC metric reporting for paired-end WGS/WES/Panel-seq data.
+# ==============================================================================
+
 import os
 from datetime import datetime
 import pandas as pd
@@ -5,23 +13,22 @@ from pathlib import Path
 from itertools import product
 import tempfile
 
-
+# Define the container to use for rules using singularity/docker
 container: "docker://condaforge/mambaforge"
 
+# Include external Snakemake rule definitions
+include: "rules/common.smk"            # Common helpers, config validation, and metadata loading
+include: "rules/sort_index.smk"        # BAM sorting and indexing rules
+include: "rules/adapter_trimming.smk"  # Read QC with cutadapt (trimming) and fastqc
+include: "rules/alignment.smk"         # BWA alignment mapping and lane-merging rules
+include: "rules/duplicate_marking.smk" # Duplicate read marking via sambamba
+include: "rules/flagstatt.smk"         # Alignment alignment-rate stats using samtools flagstat
+include: "rules/metric_hsmetrics.smk"  # Hybrid selection metrics (WES/Panel only)
+include: "rules/metric_insert_size.smk" # Insert size distribution metric reporting
+include: "rules/metric_mosdepth.smk"    # Fast depth & coverage stats reporting
+include: "rules/metric_wgs_coverage.smk" # WGS coverage plot generation (WGS only)
+include: "rules/recalibration.smk"     # Base Quality Score Recalibration (BQSR) via GATK
 
-include: "rules/common.smk"  #done
-include: "rules/sort_index.smk"  #done
-# include: "rules/create_links.smk"
-# include: "rules/umi_based_rules.smk"  #done
-include: "rules/adapter_trimming.smk"  #done
-include: "rules/alignment.smk"  #done
-include: "rules/duplicate_marking.smk"  #done
-include: "rules/flagstatt.smk"  #done
-include: "rules/metric_hsmetrics.smk"  #done
-include: "rules/metric_insert_size.smk"  #done
-include: "rules/metric_mosdepth.smk"  #done
-include: "rules/metric_wgs_coverage.smk"  #done
-include: "rules/recalibration.smk"  #done
 
 
 rule all:

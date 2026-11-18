@@ -1,4 +1,9 @@
-# For some reason this conditional statement is needed to avoid a syntax error
+# ==============================================================================
+# Rules for Hybrid Selection (HS) Metrics reporting using Picard/GATK
+#
+# Generates target and bait interval lists and collects hybrid selection coverage
+# metrics (enrichment rate, fold 80 penalty, off-target rate) for WES/Panel-seq.
+# ==============================================================================
 
 if seq_type in ["Panel", "WES"]:
 
@@ -7,7 +12,7 @@ if seq_type in ["Panel", "WES"]:
             target_regions=target_regions,
             chrom_size=chrom_sizes,
         output:
-            flank_bed=temp(wrkdir / "metrics" / "{sample}_flank.bed"),
+            flank_bed=temp(scratch_path / "metrics" / "{sample}_flank.bed"),
         conda:
             "../envs/bedtools.yaml"
         threads: 1
@@ -30,12 +35,12 @@ if seq_type in ["Panel", "WES"]:
             bait_regions=(
                 bait_regions
                 if "bait_regions" in config
-                else wrkdir / "metrics" / "{sample}_flank.bed"
+                else scratch_path / "metrics" / "{sample}_flank.bed"
             ),
             dict_genome=dict_genome,
         output:
-            bait_intervals=temp(wrkdir / "metrics" / "{sample}_flank.interval_list"),
-            target_intervals=temp(wrkdir / "metrics" / "{sample}_target.interval_list"),
+            bait_intervals=temp(scratch_path / "metrics" / "{sample}_flank.interval_list"),
+            target_intervals=temp(scratch_path / "metrics" / "{sample}_target.interval_list"),
         conda:
             "../envs/gatk.yaml"
         threads: 1
@@ -57,8 +62,8 @@ if seq_type in ["Panel", "WES"]:
     rule HSmetrics:
         input:
             bam=wrkdir / "alignments" / "{sample}_dedup.recall.cram",
-            bait_intervals=wrkdir / "metrics" / "{sample}_flank.interval_list",
-            target_intervals=wrkdir / "metrics" / "{sample}_target.interval_list",
+            bait_intervals=scratch_path / "metrics" / "{sample}_flank.interval_list",
+            target_intervals=scratch_path / "metrics" / "{sample}_target.interval_list",
             genome=genome,
         output:
             target=wrkdir / "metrics" / "{sample}.hs_metrics.txt",

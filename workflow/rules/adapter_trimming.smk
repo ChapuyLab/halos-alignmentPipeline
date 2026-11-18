@@ -1,5 +1,6 @@
-# disabling adapter trimming when when set to false,
-# To maintain the same input and output files we create links instead of running cutadapt
+# ==============================================================================
+# Rules for FASTQ preparation (BAM / SRA), adapter trimming (Cutadapt), and FastQC
+# ==============================================================================
 
 
 rule create_adapter_fastq:
@@ -7,8 +8,8 @@ rule create_adapter_fastq:
         adapt_1=adapter_seq_r1,
         adapt_2=adapter_seq_r2,
     output:
-        adapt_1=temp(wrkdir / "{sample}" / "cutadapt" / "adapt_1.fastq"),
-        adapt_2=temp(wrkdir / "{sample}" / "cutadapt" / "adapt_2.fastq"),
+        adapt_1=temp(scratch_path / "{sample}" / "cutadapt" / "adapt_1.fastq"),
+        adapt_2=temp(scratch_path / "{sample}" / "cutadapt" / "adapt_2.fastq"),
     threads: 1
     resources:
         mem_mb=1000,
@@ -33,24 +34,64 @@ rule create_adapter_fastq:
                 count += 1
 
 
+rule prepare_fastq:
+    input:
+        bam=bamfile if input_mode == "bam" else [],
+    params:
+        script=lambda wc: str(Path(workflow.basedir) / "scripts" / "prepare_fastq.sh"),
+        mode=input_mode,
+        bam=bamfile or "",
+        samtools_params=config.get("extra_samtools_convert_params", ""),
+        sra_id=sra_id or "",
+        ngc=ngc_file or "",
+    output:
+        fastq_r1=temp(scratch_path / "fastq" / "{run_id}" / "{sample}_R1_{lane}.fastq.gz"),
+        fastq_r2=temp(scratch_path / "fastq" / "{run_id}" / "{sample}_R2_{lane}.fastq.gz"),
+    log:
+        logdir / "prepare_fastq/{run_id}_{sample}_{lane}.log",
+    threads: 8
+    resources:
+        mem_mb=100000,
+        runtime=72 * 60,
+        nodes=1,
+        tmpdir=scratch_dir,
+    conda:
+        "../envs/sra_tools.yaml"
+    message:
+        "Preparing paired-end FASTQ files from input source"
+    shell:
+        """
+        bash {params.script} \
+            --mode {params.mode} \
+            --r1 {output.fastq_r1} \
+            --r2 {output.fastq_r2} \
+            --threads {threads} \
+            --tmpdir {resources.tmpdir} \
+            --bam "{params.bam}" \
+            --samtools-params "{params.samtools_params}" \
+            --sra "{params.sra_id}" \
+            --ngc "{params.ngc}" &> {log}
+        """
+
+
 rule cutadapt:
     input:
-        adapt_1=wrkdir / "{sample}" / "cutadapt" / "adapt_1.fastq",
-        adapt_2=wrkdir / "{sample}" / "cutadapt" / "adapt_2.fastq",
-        fastq_r1=lambda wc: getFastq(wc, metadata, wrkdir, False)[0],
-        fastq_r2=lambda wc: getFastq(wc, metadata, wrkdir, False)[1],
+        adapt_1=scratch_path / "{sample}" / "cutadapt" / "adapt_1.fastq",
+        adapt_2=scratch_path / "{sample}" / "cutadapt" / "adapt_2.fastq",
+        fastq_r1=lambda wc: getFastq(wc, metadata, scratch_path, False)[0],
+        fastq_r2=lambda wc: getFastq(wc, metadata, scratch_path, False)[1],
     params:
         extra_cutadapt_params=extra_cutadapt_params,
     output:
         fastq_r1=temp(
-            wrkdir
+            scratch_path
             / "fastq"
             / "{run_id}"
             / "cutadapt"
             / "{sample}_R1_{lane}_trim.fastq.gz"
         ),
         fastq_r2=temp(
-            wrkdir
+            scratch_path
             / "fastq"
             / "{run_id}"
             / "cutadapt"
@@ -75,7 +116,7 @@ rule cutadapt:
 rule fastqc:
     input:
         fastq=(
-            wrkdir
+            scratch_path
             / "fastq"
             / "{run_id}"
             / "cutadapt"

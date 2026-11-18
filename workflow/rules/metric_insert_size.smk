@@ -1,4 +1,11 @@
 
+# ==============================================================================
+# Rule for collecting library insert size metrics using GATK/Picard
+#
+# Analyzes paired-end alignments to compute insert size distribution metrics
+# and generates a PDF histogram plot of the results.
+# ==============================================================================
+
 rule InsertSize:
     input:
         bam=wrkdir / "alignments" / "{sample}_dedup.recall.cram",

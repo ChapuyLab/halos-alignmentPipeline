@@ -1,178 +1,71 @@
-# Sequencing Alignment Pipeline
+# Alignment Pipeline 2.0 (FASTQ / BAM / SRA)
 
-Authour: Shashwat Sahay(shashwat.sahay@charite.de)
+Author: Shashwat Sahay (shashwat.sahay@charite.de)
 
+Unified paired-end alignment, realignment, and QC pipeline for **WGS**, **WES**, and **Panel** sequencing data. Supports three input modes from a single Snakemake workflow:
 
+1. **FASTQ metadata sheet (`metadata`)** — multi-run / multi-lane paired-end FASTQs
+2. **BAM file (`bamfile`)** — extracts paired-end reads and realigns from scratch
+3. **SRA accession (`sra` / `sra_id`)** — downloads and converts SRA runs to paired-end FASTQs (with optional `.ngc` key file for controlled-access data)
 
-The pipeline is made for aligning WGS/WES and Panel Seq data and to compute the QC metrics associated with it.
+> **Requirement:** Sequencing data must be paired-end.
 
-We require the sequencing is performed in paired end mode
+---
 
+## Prerequisites
 
-# Prerequisites
+- A working **Snakemake** installation in a conda/mamba environment (recommended: `miniforge3`).
+- Per-rule conda environments are defined in `workflow/envs/` and managed automatically by Snakemake when run with `--use-conda`.
+  - `workflow/envs/sra_tools.yaml` provides `sra-tools`, `samtools`, and `pigz` for BAM/SRA FASTQ preparation.
 
-To run the pipeline make sure you have a working snakemake installation in a conda environment.
-Please follow this guide on how to install [mamba](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html)
+---
 
-Clone this repository with command
+## Input Modes
 
-```
-git clone https://github.com/ChapuyLab/AlignmentPipeline.git
-```
+Provide **exactly one** of `metadata`, `bamfile`, or `sra` (or `sra_id`) in `config/config.yaml`:
 
-And change to directory
+- **FASTQ Metadata (`metadata`)**: Path to a CSV/TSV metadata sheet with columns `PATIENT_ID`, `SAMPLE_TYPE`, `SAMPLE_NAME`, `RUN_ID`, `LANE_NO`, `READ` (`R1`/`R2`), and `FASTQ_FILE`. Supports multiple runs and lanes, aligned per lane and merged before duplicate marking.
+- **BAM (`bamfile`)**: Path to an aligned/unaligned BAM file. `workflow/scripts/prepare_fastq.sh` fixes `MT5:` headers if present, collates pairs, and extracts paired-end FASTQs via `samtools fastq`.
+- **SRA (`sra` or `sra_id`)**: NCBI SRA run accession (e.g., `SRR12345678`). `workflow/scripts/prepare_fastq.sh` downloads the run with `prefetch`, converts it to paired-end FASTQs with `fasterq-dump --split-files`, and compresses with `pigz`.
+  - **Controlled-access SRA (`ngc` or `ngc_file`, optional)**: Path to a dbGaP/SRA `.ngc` key file passed via `--ngc` to `prefetch` and `fasterq-dump`.
 
-```
+---
 
-cd AlignmentPipeline
-```
+## Configuration (`config/config.yaml`)
 
+- **Sample & Sequencing**: `SeqType` (`"WGS"`, `"WES"`, `"Panel"`), `library_prep_kit`, `pid`, `sample`.
+- **Input**: One of `metadata`, `bamfile`, or `sra` (plus optional `ngc` for SRA).
+- **Directories**: `work_dir`, `log_dir` (defaults to `{work_dir}/logs`), `scratch_dir` (optional; intermediate FASTQs/BAMs are stored here, defaulting to `work_dir`).
+- **Reference & Targets**: `genome`, `dbsnp`, and (for `WES`/`Panel`) `target_regions`, `bait_regions` (optional), `chrom_sizes`, `dict_genome`.
+- **Trimming & Options**: `trim_adapters` (`True`/`False`), `adapter_forward_read`, `adapter_reverse_read`, `extra_cutadapt_params`, `extra_samtools_convert_params`, `max_coverage`.
+  > **Note (`extra_cutadapt_params`):** Modern exome library preparations such as **Agilent SureSelect V8** include UMI tags at the start of the reads. If your data contains these UMI tags, set `extra_cutadapt_params: "-u 5"` (with `trim_adapters: True`) to trim them off before alignment.
 
-## Recommended Installation
+---
 
-Please create a conda environment
+## Running the Pipeline
 
-```
-mamba env create -f workflow/envs/Alginmentbase.yaml
-```
+From the `alignment_pipeline_2.0` directory:
 
-
-
-## One step installation
-### !!! Not Recommended !!!
-
-A one for all conda environment is available at `workflow/envs/alignmentFull.yaml`. Although this is not the recommended way to prepare the conda environment in which the pipeline is run. As each rule has its own conda enviroment and can be/should be run independent of the base environment
-
-```
-mamba env create -f workflow/envs/alignmentFull.yaml
-```
-
-
-# Pipeline Preparation
-
-### !!! Important !!!
-
-The pipeline in its current format is configured to run only one sample at a time. We have provided an extra a `helper.ipynb` noptebook which can be use to create the necessary files for running the pipeline, this pipeline was tested on slurm cluster and is supposed to be run in a cluster environment
-
-## Config file
-To start the pipeline certain configurations must be made in the template config ```config/config.yaml```. It is recommended for each run of the pipeline a new config file be created based on the template. It is also remcommended that the config file is stored in the output folder
-
-Please modify the entry for
-
-1. `SeqType`: Should be either `Panel`, `WGS` or `WES`
-
-2. `library_prep_kit`: Library prep kit used for preparing the sample. If not available will be set to Unknown
-
-3. `pid`: The patient ID as that in the PATIENT ID column. Needs to be `string`
-
-4. `sample`: Since this pipleine is run sample wise please mention the sample name as mentioned in the sample_name column of the metadata file. Needs to be `string`
-7. `metadata` Absolute path to the metadata sheet (Please check [Metadata section](#metadata) for format specifcation of the metadata sheet). Needs to be `Path`
-
-8. `work_dir` Please provide an absolute path to a working folder to store the output of pipeline. It is recommended that this folder is suffixed with PID_SAMPLE to avoid result overwriting. Needs to be `Path`
-
-9. `log_dir` Please provide an absolute path to a log folder to store the logs of the pipeline. It is recommended that this is inside the work_dir. Needs to be `Path`, if not provided or left empty the reverts to default `<workdir>/logs`
-
-10. `genome` Please provide an abosolute path to the `genome.fa` file please note the genome should be indexed for use with bwa mem and indexes should be in the same folder as the genome
-
-11. `dbsnp`: Please provide path to a vcf file used for recalibration by BaseRecalibrator
-
-12. `trim_adapters`: A boolean to switch on and off the adapter trimming using cutadapt. It is highly recommended that adapter trimming be carried out but can switched off in rare cases
-
-5. `Adapter_R1` with the Adapter Sequences for Read 1 of the library prep. Needs to be `List` can be an empty list if `trim_adapters` switch is set to False
-
-6. `Adapter_R3` with the Adapter Sequences for Read 3 of the library prep Needs to be `List` can be an empty list if `trim_adapters` switch is set to False
-
-13. `target_regions`: Absolute path to the target regions, must be set when `SeqType` is `WES` or `Panel`
-
-14. `bait_regions`: Absolute path to the bait regions, if unset and `SeqType` is `WES` or `Panel`. A slop of 100bp on the `target_regions` is computed and used as bait regions
-
-15. `chrom_sizes`: An absolute path to chromosomals length for the given genomes, ignored if `SeqType` is `WGS`
-
-16. `dict_genome`: An absolute path to dict file for the given genomes, ignored if `SeqType` is `WGS`
-
-17. `max_coverage`: Max coverage for HSMetric not needed for WGS
-## Metadata file
-
-Please create a metadata file with columns other columns can exist but not required
-1. FASTQ_FILE: A column containing absolute paths to the locations of the FASTQ files,
-2. READ: A column contain information with regards to R1, R2 and R3 of the sequencing file. Needs to be prefixed with `R` if not present
-3. LANE_NO: A column containing the lane information for the sequencing files. Should be prefixed with `L_` if not present
-4. SAMPLE_TYPE: Containing the sample name which is inputed in the config file. Please note if the metadata file consists of multipe samples only the sample pid combination mentioned in the sample and pid directive of the config.yaml will be run
-5. PATIENT_ID :Containing the ```pid``` which is inputed in the config file. Please note if the metadata file consists of multipe PIDs only the ```sample``` ```pid``` combination mentioned in the sample and pid directive of the config.yaml will be run.
-7. RUN_ID: Please mention the run id for the squencing run for the sample
-
-
-# Running the pipeline
-
-Once you have the config file and the metadata file setup
-
-First activate the conda environement containing base snakmake installation
-
-```
-mamba activate umi-dedup-base
+```bash
+snakemake --use-conda --cores <N> --configfile config/config.yaml
 ```
 
-The run the pipeline with the following commands
+Or using the Slurm profile:
 
-```
-cd <Path/to/work_dir>
-snakemake -j 10 --configfile <Path/to/config.yaml> \
- --use-conda --conda-frontend mamba \
- --conda-prefix <Path/to/local/conda_envs> \
- --profile <Path/to/pipeline_dir/profile> \
- --snakefile <Path/to/pipeline_dir/workflow/Snakefile
-
+```bash
+snakemake --profile profile --configfile config/config.yaml
 ```
 
-The `--conda-prefix` will install the conda environment required at the particular location specified, this will helpful in maintaining a single version across runs. This is the recommended way.
+---
 
-**!!!Note!!!**
-Please make sure before running mulitple instances of the pipeline, to run this command for one sample or for some test data so as to setup the environments.
-You can ignore the --conda-prefix command but is highly recommned to use ut
+## Outputs
 
-## Running with Singularity
-
-It is recommend to run the pipeline using a singularity container when working on High Performance Cluster. For this you would require to start the pipeline with
-
-
-```
-cd <Path/to/work_dir>
-snakemake -j 10 --configfile <Path/to/config.yaml> \
- --use-singularity --singularity-prefix <Path/to/local/Singularity> \
- --singularity-args "-B /Path/to/data_folder1/:/Path/to/data_folder1,/Path/to/data_folder2/:/Path/to/data_folder2" \
- --use-conda --conda-frontend mamba \
- --conda-prefix <Path/to/local/conda_envs> \
- --profile <Path/to/pipeline_dir/profile> \
- --snakefile <Path/to/pipeline_dir/workflow/Snakefile
-```
-
-The `--singularity-prefix` will install the singularity environment required at the particular location specified, this will helpful in maintaining a single version across runs. This is the recommended way.
-
-**!!!Note!!!**
-Please make sure before running mulitple instances of the pipeline run this command for one sample or for some test data so as to setup the singularity image and the conda environment inside them.
-
-The `--singularity-args` must be used to bind the folders/files required by the pipeline
-(**Hint:** the files and folders inside the `config/config.yaml` file the location of the fastq files from the metadata file will need to be bound).
-
-The current working directory is automatically bound by snakemake. Please look at documentation at [Apptainer](https://apptainer.org/docs/user/latest/introduction.html) and [Snakmake documentation](https://snakemake.readthedocs.io/en/v7.32.3/snakefiles/deployment.html#running-jobs-in-containers)
-
-**Side Note**
-If you are using a HPC please talk to your cluster admin and make sure all compute nodes have a running singularity version, For the first run/setup of the conda environment and singularity container requires the Node to have a working internet connection.
-
-
-
-## With one time install
-
-#### !!! Not Recommended !!!
-First activate the conda environement containing base snakmake installation
-
-```
-mamba activate umi-wgs-full
-```
-
-The run the pipeline with the following commands
-
-```
-cd <Path/to/work_dir>
-snakemake --slurm -j 10 --configfile <Path/to/config.yaml> --profile <Path/to/pipeline_dir/profile> --snakefile <Path/to/pipeline_dir/workflow/nakefile
-```
+- **Final Alignment (`{work_dir}/alignments/`)**:
+  - `{pid}_{sample}_dedup.recall.cram` and `.crai`
+- **QC Metrics (`{work_dir}/metrics/`)**:
+  - `{pid}_{sample}.mosdepth.global.dist.txt`, `{pid}_{sample}.mosdepth.summary.txt`
+  - `{pid}_{sample}_dedup.recall.flagstat`
+  - `{pid}_{sample}_insert_size_metrics.txt`, `{pid}_{sample}_insert_size.pdf`
+  - `{pid}_{sample}_recal_data.table`, `{pid}_{sample}_covariates.pdf`
+  - `{pid}_{sample}.hs_metrics.txt` (`WES` / `Panel`) or `{pid}_{sample}_coverage.png` (`WGS`)
+  - FastQC reports in `{work_dir}/fastq/{run_id}/cutadapt/` when `trim_adapters: True`

@@ -1,9 +1,9 @@
 print(
     """
-    \tAlignment pipeline for UMI based sequencing reads
+    \tAlignment Pipeline 2.0 (Paired-end FASTQ / BAM / SRA)
     \tAuthor: Shashwat Sahay
     \tEmail: shashwat.sahay@charite.de
-    \tVersion: 0.2.0
+    \tVersion: 2.0.0
 
     """
 )
@@ -28,17 +28,36 @@ if "sample" not in config:
 if "pid" not in config:
     raise ValueError("Patient ID not provided")
 
-if "metadata" not in config:
-    raise ValueError("Metadata file not provided")
-else:
+_metadata_cfg = config.get("metadata")
+_bamfile_cfg = config.get("bamfile")
+_sra_cfg = config.get("sra") or config.get("sra_id")
+ngc_file = config.get("ngc") or config.get("ngc_file") or None
+
+_provided_inputs = [
+    name
+    for name, val in [("metadata", _metadata_cfg), ("bamfile", _bamfile_cfg), ("sra", _sra_cfg)]
+    if val
+]
+
+if len(_provided_inputs) == 0:
+    raise ValueError("Provide one of 'metadata', 'bamfile', or 'sra' in config.")
+if len(_provided_inputs) > 1:
+    raise ValueError(
+        f"Provide only one of 'metadata', 'bamfile', or 'sra' in config (got: {', '.join(_provided_inputs)})."
+    )
+
+if _metadata_cfg:
+    input_mode = "fastq"
+    bamfile = None
+    sra_id = None
     sep = ","
-    if config["metadata"].split(".")[-1] in ["tsv", "txt"]:
+    if _metadata_cfg.split(".")[-1] in ["tsv", "txt"]:
         sep = "\t"
-    elif config["metadata"].split(".")[-1] not in ["csv", "tsv", "txt"]:
+    elif _metadata_cfg.split(".")[-1] not in ["csv", "tsv", "txt"]:
         raise ValueError(
             "Can't resolve the separator for the metadata file from extension"
         )
-    metadata = pd.read_csv(config["metadata"], dtype=str, sep=sep)
+    metadata = pd.read_csv(_metadata_cfg, dtype=str, sep=sep)
     metadata = metadata[
         (metadata["SAMPLE_TYPE"] == config["sample"])
         & (metadata["PATIENT_ID"] == config["pid"])
@@ -48,6 +67,23 @@ else:
             "No metadata found for the given sample: %s and patient ID: %s"
             % (config["sample"], config["pid"])
         )
+    print(get_data_time(), f"Input mode: FASTQ metadata ({_metadata_cfg})")
+elif _bamfile_cfg:
+    input_mode = "bam"
+    metadata = None
+    bamfile = _bamfile_cfg
+    sra_id = None
+    print(get_data_time(), f"Input mode: BAM ({bamfile})")
+else:
+    input_mode = "sra"
+    metadata = None
+    bamfile = None
+    sra_id = str(_sra_cfg).strip()
+    print(get_data_time(), f"Input mode: SRA ({sra_id})")
+    if ngc_file:
+        if not os.path.exists(ngc_file):
+            raise ValueError(f"Provided ngc file does not exist: {ngc_file}")
+        print(get_data_time(), f"Using NGC key file: {ngc_file}")
 
 ##########################################################
 ###### Setting Sequencing type and related parameters ####
@@ -119,20 +155,20 @@ if "work_dir" not in config:
 else:
     wrkdir = Path(config["work_dir"])
 
-if "log_dir" not in config:
+if "log_dir" not in config or not config["log_dir"]:
     logdir = wrkdir / "logs"
 else:
     logdir = Path(config["log_dir"])
 
-if "scratch_dir" not in config:
-    scratch_dir = tempfile.gettempdir()
+if "scratch_dir" not in config or not config["scratch_dir"]:
+    scratch_path = wrkdir
 else:
-    scratch_dir = config[
-        "scratch_dir"
-    ]  # snakemake doesnt accept path in resources has to be a string
-    if not os.path.exists(scratch_dir):
-        print(get_data_time(), "Scratch directory does not exist")
-        os.makedirs(scratch_dir)
+    scratch_path = Path(config["scratch_dir"])
+    if not os.path.exists(scratch_path):
+        print(get_data_time(), "Scratch directory does not exist, creating it")
+        os.makedirs(scratch_path, exist_ok=True)
+
+scratch_dir = str(scratch_path)
 
 print(get_data_time(), "Setting working directory to %s" % wrkdir)
 print(get_data_time(), "Setting log directory to %s" % logdir)
@@ -155,7 +191,7 @@ else:
         else:
             adapter_seq_r1 = config["adapter_forward_read"]
         if "adapter_reverse_read" not in config:
-            raise ValueError("Adapter sequence for R3 not provided")
+            raise ValueError("Adapter sequence for R2 not provided")
         else:
             adapter_seq_r2 = config["adapter_reverse_read"]
 
@@ -167,61 +203,63 @@ else:
     max_coverage = config["max_coverage"]
 
 
-# Create a set of valid combination for run lane and read ids
-
-LANE = metadata["LANE_NO"].unique().tolist()
-RUN_ID = metadata["RUN_ID"].unique().tolist()
+# Extract unique lanes and runs (from metadata in fastq mode, or single virtual run/lane for bam/sra)
+if input_mode == "fastq":
+    LANE = metadata["LANE_NO"].unique().tolist()
+    RUN_ID = metadata["RUN_ID"].unique().tolist()
+else:
+    LANE = ["L0001"]
+    RUN_ID = ["run1"]
 
 
 def filter_combinator(combinator, allow_list):
     def filtered_combinator(*args, **kwargs):
         for wc_comb in combinator(*args, **kwargs):
-            # print(wc_comb)
             if frozenset(wc_comb) in allow_list:
                 yield wc_comb
 
-    # print("hi")
     return filtered_combinator
 
 
+# Allowed combinations for sample, run, and lane
 allow_list = set()
-for run_id in RUN_ID:
-    for lane in metadata[metadata.RUN_ID == run_id]["LANE_NO"].unique().tolist():
-        allow_list.add(
-            frozenset(
-                {
-                    ("run_id", run_id),
-                    ("sample", config["pid"] + "_" + config["sample"]),
-                    ("lane", lane),
-                }
-            )
-        )
-
-
-filtered_product = filter_combinator(product, allow_list)
-
-allow_list_2 = set()
-for read in ["R1", "R2"]:
+if input_mode == "fastq":
     for run_id in RUN_ID:
         for lane in metadata[metadata.RUN_ID == run_id]["LANE_NO"].unique().tolist():
-            allow_list_2.add(
+            allow_list.add(
                 frozenset(
                     {
                         ("run_id", run_id),
                         ("sample", config["pid"] + "_" + config["sample"]),
                         ("lane", lane),
-                        ("read", read),
                     }
                 )
             )
+else:
+    allow_list.add(
+        frozenset(
+            {
+                ("run_id", "run1"),
+                ("sample", config["pid"] + "_" + config["sample"]),
+                ("lane", "L0001"),
+            }
+        )
+    )
+
+filtered_product = filter_combinator(product, allow_list)
+
+# Allowed combinations for FastQC on trimmed reads (only when trim_adapters is enabled)
+allow_list_2 = set()
+if config["trim_adapters"]:
+    for read in ["R1", "R2"]:
+        for comb in allow_list:
+            allow_list_2.add(comb | frozenset({("read", read)}))
 
 filtered_product_2 = filter_combinator(product, allow_list_2)
 
-#######################################################
-######## extra params #################################
-### Since each tool can allow for mutliple parmas #####
-### we can provide them directly in the config file ###
-#######################################################
+# ==============================================================================
+# extra params
+# ==============================================================================
 
 if "extra_cutadapt_params" in config:
     extra_cutadapt_params = config["extra_cutadapt_params"]
@@ -229,28 +267,21 @@ else:
     extra_cutadapt_params = ""
 
 
-# print(metadata)
-# print("blah")
-# print(filtered_product)
-# print("blah")
-# print(allow_list)
-
-
-def getFastq(wildcards, metadata, wrkdir, trim_adapters):
+def getFastq(wildcards, metadata, base_dir, trim_adapters):
     if trim_adapters:
         fastq_r1 = [
-            wrkdir
+            base_dir
             / "fastq"
             / wildcards.run_id
             / "cutadapt"
             / (wildcards.sample + "_R1_" + wildcards.lane + "_trim.fastq.gz"),
-            wrkdir
+            base_dir
             / "fastq"
             / wildcards.run_id
             / "cutadapt"
             / (wildcards.sample + "_R2_" + wildcards.lane + "_trim.fastq.gz"),
         ]
-    else:
+    elif input_mode == "fastq":
         fastq_r1 = (
             metadata[
                 (metadata["RUN_ID"] == wildcards.run_id)
@@ -260,8 +291,19 @@ def getFastq(wildcards, metadata, wrkdir, trim_adapters):
             .sort_values("READ")["FASTQ_FILE"]
             .values
         )
+    else:
+        fastq_r1 = [
+            base_dir
+            / "fastq"
+            / wildcards.run_id
+            / (wildcards.sample + "_R1_" + wildcards.lane + ".fastq.gz"),
+            base_dir
+            / "fastq"
+            / wildcards.run_id
+            / (wildcards.sample + "_R2_" + wildcards.lane + ".fastq.gz"),
+        ]
     if len(fastq_r1) != 2:
         print(fastq_r1)
-        raise ValueError("Expected to two file R1 and R2")
+        raise ValueError("Expected two files R1 and R2")
 
     return fastq_r1

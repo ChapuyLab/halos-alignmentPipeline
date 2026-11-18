@@ -1,24 +1,6 @@
-# def getFastq(wildcards, metadata, trim_adapters):
-#     if trim_adapters:
-#         fastq_r1=[
-#             wrkdir / "fastq" / wildcards.run_id / "cutadapt" / (wildcards.sample+"_R1_"+wildcards.lane+"_trim.fastq.gz"),
-#             wrkdir / "fastq" / wildcards.run_id / "cutadapt" / (wildcards.sample+"_R2_"+wildcards.lane+"_trim.fastq.gz")
-#         ]
-#     else:
-#         fastq_r1 = (
-#             metadata[
-#                 (metadata["RUN_ID"] == wildcards.run_id)
-#                 & (metadata["LANE_NO"] == wildcards.lane)
-#                 & (metadata["SAMPLE_NAME"] == wildcards.sample)
-#             ]
-#             .sort_values("READ")["FASTQ_FILE"]
-#             .values
-#         )
-#     if len(fastq_r1) != 2:
-#         print(fastq_r1)
-#         raise ValueError("Expected to two file R1 and R2")
-
-#     return fastq_r1
+# ==============================================================================
+# Rules for alignment and lane-merging using BWA and Samtools
+# ==============================================================================
 
 
 rule bwa_map:
@@ -28,7 +10,7 @@ rule bwa_map:
     """
     input:
         genome=genome,
-        fastq_r1=lambda wc: getFastq(wc, metadata, wrkdir, config["trim_adapters"]),
+        fastq_r1=lambda wc: getFastq(wc, metadata, scratch_path, config["trim_adapters"]),
     params:
         RG=lambda wc: "'@RG\\tID:"
         + wc.run_id
@@ -44,7 +26,7 @@ rule bwa_map:
         + config["sample"]
         + "\\tPL:ILLUMINA'",
     output:
-        temp(wrkdir / "alignments" / "{run_id}" / "{sample}_aln_{lane}.bam"),
+        temp(scratch_path / "alignments" / "{run_id}" / "{sample}_aln_{lane}.bam"),
     threads: 8
     resources:
         mem_mb=20000,
@@ -68,14 +50,14 @@ rule merge:
     """
     input:
         expand(
-            wrkdir / "alignments" / "{run_id}" / "{sample}_aln_{lane}.bam",
+            scratch_path / "alignments" / "{run_id}" / "{sample}_aln_{lane}.bam",
             filtered_product,
             run_id=RUN_ID,
             sample=config["pid"] + "_" + config["sample"],
             lane=LANE,
         ),
     output:
-        bam=temp(wrkdir / "alignments" / "{sample}.merged.bam"),
+        bam=temp(scratch_path / "alignments" / "{sample}.merged.bam"),
     threads: 24
     resources:
         mem_mb=8000,
