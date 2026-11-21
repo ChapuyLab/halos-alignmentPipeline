@@ -40,8 +40,8 @@ rule bwa_map:
     log:
         logdir / "bwa" / "first_pass_align_{run_id}_{sample}_{lane}.log",
     shell:
-        "bwa mem -Y -K 150000000 -t {threads} -R {params.RG} {input.genome} {input.fastq_r1} "
-        "| samtools view -b - > {output}"
+        "(set -o pipefail; bwa mem -Y -K 150000000 -t {threads} -R {params.RG} {input.genome} {input.fastq_r1} "
+        "| samtools view -b - > {output}) 2> {log}"
 
 
 rule merge:
@@ -71,8 +71,8 @@ rule merge:
     log:
         logdir / "samtools/{sample}_merge.log",
     shell:
-        " if [ $(echo {input} | wc -w) -eq 1 ]; then "
+        "(if [ $(echo {input} | wc -w) -eq 1 ]; then "
         " mv {input[0]} {output.bam}; "
         " else "
         "  samtools merge --threads {threads} -f {output.bam} {input}; "
-        "fi"
+        "fi) &> {log}"

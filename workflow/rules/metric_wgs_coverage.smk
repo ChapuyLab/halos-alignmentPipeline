@@ -18,7 +18,7 @@ rule wgsBinReadCounts:
     params:
         bin_bp=WGS_BINSIZE * 1000,
     output:
-        counts=temp(scratch_path / "metrics" / f"{{sample}}_{WGS_BINSIZE}kb_read_counts.tsv"),
+        counts=temp(scratch_path / "metrics" / ("{sample}_" + str(WGS_BINSIZE) + "kb_read_counts.tsv")),
     threads: 4
     resources:
         mem_mb=8000,
@@ -30,7 +30,7 @@ rule wgsBinReadCounts:
     log:
         logdir / "coveragePlot/{sample}_bin_counts.log",
     message:
-        f"Counting read starts in {WGS_BINSIZE}kb bins from CRAM"
+        "Counting read starts in " + str(WGS_BINSIZE) + "kb bins from CRAM"
     shell:
         "("
         " set -o pipefail;"
@@ -48,10 +48,9 @@ rule wgsBinReadCounts:
 
 rule coveragePlot:
     input:
-        counts=scratch_path / "metrics" / f"{{sample}}_{WGS_BINSIZE}kb_read_counts.tsv",
+        counts=scratch_path / "metrics" / ("{sample}_" + str(WGS_BINSIZE) + "kb_read_counts.tsv"),
     params:
         binsize=WGS_BINSIZE,
-        sample="{sample}",
     output:
         plot=wrkdir / "metrics" / "{sample}_coverage.png",
         rds=wrkdir / "metrics" / "{sample}_readCounts.rds",

@@ -11,15 +11,20 @@ import tempfile
 from pathlib import Path
 
 
-def run_bam_to_fastq(bam: str, r1: Path, r2: Path, threads: int, samtools_params: str) -> None:
-    """Convert an aligned/unaligned BAM file to paired-end gzipped FASTQs."""
+def run_bam_to_fastq(bam: str, r1: Path, r2: Path, threads: int, samtools_params: str, reference: str = "") -> None:
+    """Convert an aligned/unaligned BAM or CRAM file to paired-end gzipped FASTQs."""
     if not bam:
         raise ValueError("--bam is required when --mode is 'bam'")
 
     extra_args = shlex.split(samtools_params) if samtools_params else []
+    ref_args = ["--reference", reference] if (reference and bam.lower().endswith(".cram")) else []
     with tempfile.TemporaryDirectory(prefix="bam_collate_", dir=str(r1.parent)) as collate_dir:
         reheader_cmd = ["samtools", "reheader", "-c", "sed 's/MT5:/M5:/g'", bam]
-        collate_cmd = ["samtools", "collate", "-T", str(Path(collate_dir) / "collate"), "-u", "-O", "-@", str(threads), "-"]
+        collate_cmd = [
+            "samtools", "collate", *ref_args,
+            "-T", str(Path(collate_dir) / "collate"),
+            "-u", "-O", "-@", str(threads), "-",
+        ]
         fastq_cmd = [
             "samtools", "fastq", *extra_args,
             "-n", "-F", "0x900",
@@ -87,7 +92,8 @@ def main() -> None:
     parser.add_argument("--r1", required=True, help="Output R1 .fastq.gz path")
     parser.add_argument("--r2", required=True, help="Output R2 .fastq.gz path")
     parser.add_argument("--threads", type=int, default=8, help="Number of threads")
-    parser.add_argument("--bam", default="", help="Input BAM path (for mode='bam')")
+    parser.add_argument("--bam", default="", help="Input BAM/CRAM path (for mode='bam')")
+    parser.add_argument("--reference", default="", help="Reference FASTA path (used when input is CRAM)")
     parser.add_argument("--samtools-params", default="", help="Extra flags for samtools fastq")
     parser.add_argument("--sra", default="", help="SRA accession (for mode='sra')")
     parser.add_argument("--sra-workdir", default="", help="Working directory in work_dir for SRA download/dump (for mode='sra')")
@@ -102,7 +108,7 @@ def main() -> None:
     r2.parent.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "bam":
-        run_bam_to_fastq(args.bam, r1, r2, args.threads, args.samtools_params)
+        run_bam_to_fastq(args.bam, r1, r2, args.threads, args.samtools_params, args.reference)
     else:
         run_sra_to_fastq(args.sra, r1, r2, args.threads, sra_workdir, args.ngc)
 

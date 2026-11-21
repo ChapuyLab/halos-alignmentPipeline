@@ -11,6 +11,7 @@ rule duplicates:
         bai=scratch_path / "alignments" / "{sample}.merged.sorted.bam.bai",
     output:
         bam=temp(scratch_path / "alignments" / "{sample}_dedup.bam"),
+        bai=temp(scratch_path / "alignments" / "{sample}_dedup.bam.bai"),
     conda:
         "../envs/sambamba.yaml"
     threads: 8

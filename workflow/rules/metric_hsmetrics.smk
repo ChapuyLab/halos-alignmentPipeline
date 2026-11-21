@@ -34,7 +34,7 @@ if seq_type in ["Panel", "WES"]:
             target_regions=target_regions,
             bait_regions=(
                 bait_regions
-                if "bait_regions" in config
+                if config.get("bait_regions")
                 else scratch_path / "metrics" / "{sample}_flank.bed"
             ),
             dict_genome=dict_genome,
@@ -50,7 +50,7 @@ if seq_type in ["Panel", "WES"]:
             nodes=1,
             tmpdir=scratch_dir,
         log:
-            logdir / "bedtools" / "{sample}_slop.log",
+            logdir / "gatk" / "{sample}_intervals.log",
         message:
             "Creating flank and target intervals for Panel and WES data"
         shell:
@@ -62,6 +62,7 @@ if seq_type in ["Panel", "WES"]:
     rule HSmetrics:
         input:
             bam=wrkdir / "alignments" / "{sample}_dedup.recall.cram",
+            bai=wrkdir / "alignments" / "{sample}_dedup.recall.cram.crai",
             bait_intervals=scratch_path / "metrics" / "{sample}_flank.interval_list",
             target_intervals=scratch_path / "metrics" / "{sample}_target.interval_list",
             genome=genome,

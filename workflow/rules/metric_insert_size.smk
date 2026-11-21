@@ -9,6 +9,7 @@
 rule InsertSize:
     input:
         bam=wrkdir / "alignments" / "{sample}_dedup.recall.cram",
+        bai=wrkdir / "alignments" / "{sample}_dedup.recall.cram.crai",
         genome=genome,
     output:
         size_metric=wrkdir / "metrics" / "{sample}_insert_size_metrics.txt",

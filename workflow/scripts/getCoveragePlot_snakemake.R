@@ -11,7 +11,7 @@ future::plan("multisession", workers = snakemake@threads)
 
 counts_tsv <- snakemake@input[["counts"]]
 binSize <- snakemake@params[["binsize"]]
-sample_name <- snakemake@params[["sample"]]
+sample_name <- snakemake@wildcards[["sample"]]
 output_plot <- snakemake@output[["plot"]]
 output_rds <- snakemake@output[["rds"]]
 

@@ -37,10 +37,12 @@ rule create_adapter_fastq:
 rule prepare_fastq:
     input:
         bam=bamfile if input_mode == "bam" else [],
+        genome=genome if input_mode == "bam" else [],
     params:
         script=lambda wc: str(Path(workflow.basedir) / "scripts" / "prepare_fastq.py"),
         mode=input_mode,
         bam=bamfile or "",
+        reference=genome if input_mode == "bam" else "",
         samtools_params=extra_samtools_convert_params,
         sra_id=sra_id or "",
         sra_workdir=lambda wc: str(wrkdir / "fastq" / "sra_tmp" / wc.sample),
@@ -68,6 +70,7 @@ rule prepare_fastq:
             --r2 {output.fastq_r2} \
             --threads {threads} \
             --bam "{params.bam}" \
+            --reference "{params.reference}" \
             --samtools-params "{params.samtools_params}" \
             --sra "{params.sra_id}" \
             --sra-workdir "{params.sra_workdir}" \
@@ -138,6 +141,8 @@ rule fastqc:
             / "cutadapt"
             / "{sample}_{read}_{lane}_trim_fastqc.zip"
         ),
+    params:
+        outdir=lambda wc, output: os.path.dirname(output.html_r1),
     log:
         logdir / "fastqc/{run_id}_{sample}_{read}_{lane}.log",
     threads: 1
@@ -150,4 +155,4 @@ rule fastqc:
     message:
         "Running Fastqc on adapter trimmed sequence"
     shell:
-        "fastqc {input.fastq} &> {log}"
+        "mkdir -p {params.outdir} && fastqc -o {params.outdir} {input.fastq} &> {log}"

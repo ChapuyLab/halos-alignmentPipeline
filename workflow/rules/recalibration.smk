@@ -8,6 +8,7 @@
 rule baseRecalibrator:
     input:
         bam=scratch_path / "alignments" / "{sample}_dedup.bam",
+        bai=scratch_path / "alignments" / "{sample}_dedup.bam.bai",
         dbsnp=dbsnp,
         genome=genome,
     output:
@@ -32,7 +33,7 @@ rule baseRecalibrator:
         " gatk BaseRecalibrator -I {input.bam} -R {input.genome} "
         " --known-sites {input.dbsnp} "
         " -O {output.table} && "
-        " gatk ApplyBQSR -I {input.bam} -R {genome} --bqsr-recal-file {output.table} -O {output.bam} && "
+        " gatk ApplyBQSR -I {input.bam} -R {input.genome} --bqsr-recal-file {output.table} -O {output.bam} && "
         " gatk AnalyzeCovariates "
         " -bqsr {output.table} "
         " -plots {output.analyse_covariates} && "

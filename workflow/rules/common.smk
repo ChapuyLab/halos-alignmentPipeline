@@ -110,7 +110,7 @@ else:
         else:
             dict_genome = config["dict_genome"]
 
-        if "bait_regions" not in config:
+        if not config.get("bait_regions"):
             print(
                 get_data_time(),
                 "Bait regions not provided will be calculated from target regions",

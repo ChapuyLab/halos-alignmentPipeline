@@ -26,5 +26,5 @@ rule sort_index:
         "Sorting and indexing recalibrated bam file"
     shell:
         " ( "
-        " samtools sort --threads {threads} -m{params.mem_thread}m -o {output.bam}##idx##{output.bai} {input.bam} -T {resources.tmpdir} --write-index"
+        " samtools sort --threads {threads} -m{params.mem_thread}m -o {output.bam}##idx##{output.bai} {input.bam} -T {resources.tmpdir}/{wildcards.sample}_sort_tmp --write-index"
         " ) &> {log} "
