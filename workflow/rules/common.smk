@@ -308,6 +308,8 @@ extra_samtools_convert_params = resolve_sample_param(
     ["EXTRA_SAMTOOLS_CONVERT_PARAMS", "extra_samtools_convert_params"],
     "",
 )
+mosdepth_target_regions = target_regions if seq_type in ["Panel", "WES"] else []
+mosdepth_by_flag = f"--by {target_regions}" if seq_type in ["Panel", "WES"] else ""
 
 
 def getFastq(wildcards, metadata, base_dir, trim_adapters):

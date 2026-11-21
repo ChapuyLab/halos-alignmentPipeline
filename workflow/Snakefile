@@ -101,6 +101,12 @@ rule all:
         if config["SeqType"] not in ["Panel", "WES"]
         else [],
         expand(
+            wrkdir / "metrics" / "{sample}_readCounts.rds",
+            sample=config["pid"] + "_" + config["sample"],
+        )
+        if config["SeqType"] not in ["Panel", "WES"]
+        else [],
+        expand(
             wrkdir / "metrics" / "{sample}.hs_metrics.txt",
             sample=config["pid"] + "_" + config["sample"],
         )
