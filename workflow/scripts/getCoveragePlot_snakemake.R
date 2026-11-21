@@ -16,7 +16,7 @@ output_plot <- snakemake@output[["plot"]]
 output_rds <- snakemake@output[["rds"]]
 
 bins <- getBinAnnotations(binSize = binSize)
-fd <- Biobase::fData(bins)
+fd <- Biobase::pData(bins)
 
 bin_chroms <- as.character(fd$chromosome)
 bin_keys <- paste(bin_chroms, as.integer(fd$start), sep = ":")
@@ -54,9 +54,9 @@ counts_mat <- matrix(
     dimnames = list(rownames(fd), sample_name)
 )
 
-total_reads <- sum(counts_vec)
+total_reads <- sum(as.numeric(counts_vec))
 used_bins <- if ("use" %in% colnames(fd)) as.logical(fd$use) else rep(TRUE, nrow(fd))
-used_reads <- sum(counts_vec[used_bins])
+used_reads <- sum(as.numeric(counts_vec[used_bins]))
 
 pheno <- Biobase::AnnotatedDataFrame(
     data.frame(
